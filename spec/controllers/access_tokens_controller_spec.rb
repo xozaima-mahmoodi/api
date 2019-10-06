@@ -2,17 +2,61 @@ require 'rails_helper'
 
 RSpec.describe AccessTokensController, type: :controller do
   describe 'POST #create' do
+    let(:params) do
+      {
+        data: {
+          attributes: { login: "jsmith", password: "secret" }
+        }
+      }
+    end
 
-    context 'when no code provided' do
+    context 'when no auth_data provided' do
       subject { post :create }
-      it_behaves_like "unauthorized_requests"
+      it_behaves_like "unauthorized_standard_requests"
+    end
+
+    context "when invalid login provided" do
+      let(:user) { create :user, login: 'invalid', password: 'secret' }
+      subject { post :create, params: params }
+
+      before { user }
+
+      it_behaves_like "unauthorized_standard_requests"
+    end
+
+    context "when invalid password provided" do
+      let(:user) { create :user, login: 'jsmith', password: 'invalid' }
+      subject { post :create, params: params }
+
+      before { user }
+
+      it_behaves_like "unauthorized_standard_requests"
+    end
+
+    context "when valid data provided" do
+      let(:user) { create :user, login: 'jsmith', password: 'secret' }
+      subject { post :create, params: params }
+
+      before { user }
+
+      it 'should return 201 status code' do
+        subject
+        expect(response).to have_http_status(:created)
+      end
+
+      it 'should return proper json body' do
+        subject
+        expect(json_data['attributes']).to eq(
+          { 'token' => user.access_token.token }
+        )
+      end
     end
 
     context 'when invalid code provided' do
       let(:github_error) {
         double("Sawyer::Resource", error: "bad_verification_code")
       }
-    
+
       before do
         allow_any_instance_of(Octokit::Client).to receive(
           :exchange_code_for_token).and_return(github_error)
@@ -20,13 +64,13 @@ RSpec.describe AccessTokensController, type: :controller do
 
       subject { post :create, params: { code: 'invalid_code' } }
 
-      it_behaves_like "unauthorized_requests"
+      it_behaves_like "unauthorized_oauth_requests"
     end
 
     context 'when success request' do
       let(:user_data) do
         {
-          login:'jsmith1',
+          login: 'jsmith1',
           url: 'http://example.com',
           avatar_url: 'http://example.com/avatar',
           name: 'John Smith'
@@ -59,7 +103,6 @@ RSpec.describe AccessTokensController, type: :controller do
   end
 
   describe 'DELETE #destroy' do
-    
     subject { delete :destroy }
 
     context 'when no authorization header provided' do
